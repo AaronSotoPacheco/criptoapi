@@ -1,21 +1,17 @@
-// js/script.js (Reemplaza tu archivo con este código)
 
 // --- URLs de la API (Coinlore) ---
-const URL_COINS = `https://api.coinlore.net/api/tickers/`;
+const URL_COINS = `https://api.coinlore.net/api/tickers/`; 
 const EXCHANGES_URL = "https://api.coinlore.net/api/exchanges/";
 
 // --- Variables Globales ---
-let exchangesData = [],
-    coinsData = [],
+let exchangesData = [], // Guardará el Top 100 de exchanges
+    coinsData = [],     // Guardará el Top 100 de monedas
     chartCoins,
     chartExchanges;
 
 // --- Helper para seleccionar elementos ---
 const el = (id) => document.getElementById(id);
 
-/**
- * Función principal para cargar y refrescar todos los datos.
- */
 const refresh = async () => {
     try {
         const [resCoins, resExchanges] = await Promise.all([
@@ -23,48 +19,57 @@ const refresh = async () => {
             axios.get(EXCHANGES_URL)
         ]);
 
-        // 1. Procesar datos
-        coinsData = resCoins.data.data;
-        exchangesData = Object.values(resExchanges.data);
+        // 1. Procesar datos de Monedas
+        coinsData = resCoins.data.data; // Ya son el Top 100
 
-        // 2. Actualizar el Dashboard
-        updateKPIs(coinsData, exchangesData); // <-- LLAMADA A LA FUNCIÓN DE KPIs
+        // 2. Procesar datos de Exchanges
+      
+        const allExchanges = Object.values(resExchanges.data);
+        const top100Exchanges = [...allExchanges]
+            .sort((a, b) => parseFloat(b.volume_usd) - parseFloat(a.volume_usd))
+            .slice(0, 100); 
+        
+        exchangesData = top100Exchanges;
+    
 
+
+        // 3. Actualizar KPIs
+        // (Ahora exchangesData.length será 100)
+        updateKPIs(coinsData, exchangesData);
+
+        // 4. Actualizar Gráficas (Top 10)
         const top10Coins = [...coinsData]
             .sort((a, b) => parseFloat(b.price_usd) - parseFloat(a.price_usd))
             .slice(0, 10);
         renderCoinChart(top10Coins);
 
-        const top10Exchanges = [...exchangesData]
-            .sort((a, b) => parseFloat(b.volume_usd) - parseFloat(a.volume_usd))
-            .slice(0, 10);
+        // (exchangesData ya está ordenado, solo tomamos los 10 primeros)
+        const top10Exchanges = exchangesData.slice(0, 10);
         renderExchangeChart(top10Exchanges);
+
+        // 5. Actualizar Tablas (con los datos Top 100)
+        renderCoinsTable(coinsData);
+        renderExchangesTable(exchangesData);
 
     } catch (error) {
         console.error("Error al cargar datos de la API:", error);
     }
 };
 
-/**
- * REQUISITO: Mostrar total, precio medio y moneda más cara.
- * (NUEVA FUNCIÓN)
- */
+
 function updateKPIs(coins, exchanges) {
-    // 1. Mostrar el total de casas de cambio
+    // el('total-exchanges') ahora mostrará 100
     el('total-exchanges').textContent = exchanges.length;
 
-    // 2. Mostrar el precio medio de cambio (del Top 100 de monedas)
     const avgPrice = coins.reduce((sum, coin) => sum + parseFloat(coin.price_usd), 0) / coins.length;
     el('avg-price').textContent = fmtUSD(avgPrice);
 
-    // 3. Mostrar la moneda más cara (del Top 100)
-    const mostExpensiveCoin = [...coins].sort((a, b) => parseFloat(b.price_usd) - parseFloat(a.price_usd))[0];
+    const mostExpensiveCoin = coins.reduce((max, coin) => 
+        parseFloat(coin.price_usd) > parseFloat(max.price_usd) ? coin : max, coins[0]);
     el('top-coin').textContent = mostExpensiveCoin.name;
 }
 
-
-// --- Funciones Helpers y de Gráficas (sin cambios) ---
-
+// --- Funciones Helpers (Formato y Color) ---
 const getColorPalette = (count) => {
     const base = [
         "#06d6a0", "#4cc9f0", "#f72585", "#ffd166", "#48bfe3", "#8338ec",
@@ -83,6 +88,8 @@ const fmtUSD = (n) => {
     return "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 };
 
+// --- Funciones de Gráficas ---
+
 function renderCoinChart(dataTop) {
     const labels = dataTop.map((x) => x.name);
     const volumes = dataTop.map((x) => parseFloat(x.price_usd));
@@ -96,7 +103,7 @@ function renderCoinChart(dataTop) {
             datasets: [{
                 label: "Precio (USD)",
                 data: volumes,
-                backgroundColor: colors.map((c) => c + "cc"),
+                backgroundColor: colors,
                 borderColor: colors,
                 borderWidth: 1.5,
             }],
@@ -104,10 +111,8 @@ function renderCoinChart(dataTop) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            devicePixelRatio: window.devicePixelRatio, // <-- Mejora la nitidez
-            scales: {
-                y: { ticks: { callback: (v) => fmtUSD(v) } }
-            },
+            devicePixelRatio: window.devicePixelRatio,
+            scales: { y: { ticks: { callback: (v) => fmtUSD(v) } } },
             plugins: { legend: { display: false } },
         },
     });
@@ -126,7 +131,7 @@ function renderExchangeChart(dataTop) {
             datasets: [{
                 label: "Volumen 24h (USD)",
                 data: volumes,
-                backgroundColor: colors.map((c) => c + "cc"),
+                backgroundColor: colors,
                 borderColor: colors,
                 borderWidth: 1.5,
             }],
@@ -135,18 +140,85 @@ function renderExchangeChart(dataTop) {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            devicePixelRatio: window.devicePixelRatio, // <-- Mejora la nitidez
-            scales: {
-                x: { ticks: { callback: (v) => fmtUSD(v) } }
-            },
+            devicePixelRatio: window.devicePixelRatio,
+            scales: { x: { ticks: { callback: (v) => fmtUSD(v) } } },
             plugins: { legend: { display: false } },
         },
     });
 }
 
+// --- Funciones de Tabla ---
+
+
+function renderCoinsTable(coins) {
+    const tableBody = el('coins-table-body');
+    tableBody.innerHTML = ''; // Limpiar tabla
+    
+    // --- MODIFICACIÓN: Ordenar por precio ---
+    const sortedCoins = [...coins].sort((a, b) => 
+        parseFloat(b.price_usd) - parseFloat(a.price_usd)
+    );
+    // --- FIN DE MODIFICACIÓN ---
+
+    const rows = sortedCoins.map(coin => `
+        <tr>
+            <td>${coin.rank}</td>
+            <td>${coin.name}</td>
+            <td>${coin.symbol}</td>
+            <td>${fmtUSD(coin.price_usd)}</td>
+        </tr>
+    `);
+    
+    tableBody.innerHTML = rows.join('');
+}
+
+
+function renderExchangesTable(exchanges) {
+    const tableBody = el('exchanges-table-body');
+    tableBody.innerHTML = '';
+    
+    // (Este array 'exchanges' ya es el Top 100)
+    // Ordenamos por si acaso (ej. después de un filtro)
+    const sortedExchanges = [...exchanges].sort((a, b) => parseFloat(b.volume_usd) - parseFloat(a.volume_usd));
+
+    const rows = sortedExchanges.map((ex, index) => `
+        <tr>
+            <td>${index + 1}</td>
+            <td>${ex.name}</td>
+            <td>${fmtUSD(ex.volume_usd)}</td>
+        </tr>
+    `);
+    
+    tableBody.innerHTML = rows.join('');
+}
+
+
 // --- Event Listeners ---
 document.addEventListener("DOMContentLoaded", () => {
     refresh();
     el("btnReload").addEventListener("click", () => refresh());
- 
+    
+    el("coin-search").addEventListener("input", (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+
+        // Filtra la lista global de Top 100 monedas
+        const filteredCoins = coinsData.filter(coin =>
+            coin.name.toLowerCase().includes(searchTerm) ||
+            coin.symbol.toLowerCase().includes(searchTerm)
+        );
+        
+        renderCoinsTable(filteredCoins);
+    });
+
+
+    el("exchange-search").addEventListener("input", (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+
+        // Filtra la lista global de Top 100 exchanges
+        const filteredExchanges = exchangesData.filter(exchange =>
+            exchange.name.toLowerCase().includes(searchTerm)
+        );
+        
+        renderExchangesTable(filteredExchanges); // Re-renderiza la tabla
+    });
 });
